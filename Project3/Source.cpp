@@ -15,7 +15,7 @@ std::set<DWORD> ActiveKey;
 std::set<DWORD> PressedKey;
 
 const int INTERVAL_MS = 10;
-	bool xbActive = false;
+bool xbActive = false;
 
 struct {
 	std::thread thread;
