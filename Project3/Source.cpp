@@ -14,8 +14,14 @@ HHOOK hhkLowLevelMouse;
 std::set<DWORD> ActiveKey;
 std::set<DWORD> PressedKey;
 
-const int INTERVAL_MS = 10;
-bool xbActive = false;
+const int INTERVAL_MS = 15;
+
+struct KeyAction {
+	KeyAction(DWORD vkCode, bool state)
+		: vkCode(vkCode), state(state) {}
+	DWORD vkCode;
+	bool state;
+};
 
 struct {
 	std::thread thread;
@@ -38,60 +44,106 @@ int capital_active() {
 }
 
 void AddKeySpam(DWORD vkCode, bool is_down) {
-	if (is_down)
+	if (is_down) {
 		ActiveKey.insert(vkCode);
+	}
 	else
 		ActiveKey.erase(vkCode);
 }
 
 void RemoveKeySpam(DWORD vkCode) {
-		ActiveKey.erase(vkCode);
+	ActiveKey.erase(vkCode);
 }
 
-bool Macros(DWORD vkCode, DWORD time, bool is_down) {
+void KeyInput(const std::vector<KeyAction>& keyActions) {
 
-	switch (vkCode)	{
-	case VK_XBUTTON2:
-		xbActive = true;
-		AddKeySpam('E', is_down);
-		return true;
-	case (VK_RBUTTON):
-		if (xbActive)
-			AddKeySpam(VK_RBUTTON, is_down);
-		else
-			RemoveKeySpam(VK_RBUTTON);
-	}
-	return false;
-}
-
-void KeyInput() {
-	const int inSize = ActiveKey.size() * 2;
+	const int inSize = (UINT)keyActions.size();
 	std::vector<INPUT> inputs(inSize);
 
-	int i = 0;
-	for (const DWORD vkCode : ActiveKey) {
+	for (UINT i = 0; i < inSize; i++) {
+
+		DWORD vkCode = keyActions[i].vkCode;
+		bool IsDown = keyActions[i].state;
 		DWORD dwFlags = 0;
 
 		switch (vkCode)
 		{
+		case VK_LBUTTON:
+			dwFlags = IsDown ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+			break;
+		case VK_RBUTTON:
+			dwFlags = IsDown ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+			break;
+		case VK_MBUTTON:
+			dwFlags = IsDown ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+			break;
 		default:
 			inputs[i].type = INPUT_KEYBOARD;
 			inputs[i].ki.wVk = (WORD)vkCode;
 			inputs[i].ki.wScan = (WORD)MapVirtualKeyA(vkCode, MAPVK_VK_TO_VSC);
-
-			++i;
-
-			inputs[i].type = INPUT_KEYBOARD;
-			inputs[i].ki.wVk = (WORD)vkCode;
-			inputs[i].ki.wScan = (WORD)MapVirtualKeyA(vkCode, MAPVK_VK_TO_VSC);
-			inputs[i].ki.dwFlags = KEYEVENTF_KEYUP;
+			inputs[i].ki.dwFlags = IsDown ? 0 : KEYEVENTF_KEYUP;
 			break;
 		}
-		++i;
+		if (dwFlags != 0) {
+			inputs[i].type = INPUT_MOUSE;
+			inputs[i].mi.dwFlags = dwFlags;
+		}
 	}
 	UINT uSent = SendInput(inSize, inputs.data(), sizeof(INPUT));
 	if (uSent != inSize)
 		throw std::exception("SendMouseKey failed.");
+}
+
+void SendAllKeys(const std::set<DWORD>& vkCodes)
+{
+	std::vector<KeyAction> keyActions;
+	for (const DWORD vkCode : vkCodes) {
+		keyActions.push_back({ vkCode, true });
+		keyActions.push_back({ vkCode, false });
+	}
+	KeyInput(keyActions);
+}
+
+bool Macros(DWORD vkCode, DWORD time, bool is_down) {
+
+	static bool xbActive = false;
+
+	switch (vkCode)
+	{
+	case VK_XBUTTON2:
+		xbActive = is_down;
+		AddKeySpam('E', is_down);
+		return true;
+	default:
+		if (xbActive) {
+			RemoveKeySpam('E');
+			switch (vkCode) {
+			case VK_RBUTTON:
+				//RemoveKeySpam('E');
+				AddKeySpam(VK_RBUTTON, is_down);
+				return true;
+			case VK_LBUTTON:
+				AddKeySpam(VK_LBUTTON, is_down);
+				return true;
+			}
+		}
+		else {
+			switch (vkCode) {
+			case VK_XBUTTON1:
+				AddKeySpam('V', is_down);
+				return true;
+			
+			//case VK_RBUTTON:
+			//	AddKeySpam(VK_RBUTTON, is_down );
+			//	break;
+			//case VK_LBUTTON:
+			//	AddKeySpam(VK_LBUTTON, is_down);
+			//	break;
+			}
+		}
+		break;
+	}
+	return false;
 }
 
 LRESULT CALLBACK keyboard_hook(const int nCode, const WPARAM wParam, const LPARAM lParam)
@@ -226,7 +278,7 @@ void Await() {
 
 void Loop() {
 	while (!tSend.stop) {
-		KeyInput();
+		SendAllKeys(ActiveKey);
 		std::this_thread::sleep_for(tSend.interval);
 	}
 }
