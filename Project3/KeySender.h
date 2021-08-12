@@ -5,6 +5,10 @@
 #include <set>
 #include <thread>
 #include <memory>
+#include <map>
+#include <mutex>
+
+#include <functional>
 
 struct KeyAction {
 	KeyAction(DWORD vkCode, bool state)
@@ -21,7 +25,9 @@ public:
 
 	void Start();
 	void Stop();
-	void AddKeySpam(DWORD vkCode, bool is_down);
+	void AddKeySpam(DWORD vkCode, bool is_add);
+	void AddKeySpam(DWORD vkCode, bool is_add, std::chrono::milliseconds tSleep);
+	void tAddKeySpam();
 	void RemoveKeySpam(DWORD vkCode);
 
 private:
@@ -31,12 +37,30 @@ private:
 
 private:
 	static const int INTERVAL_MS = 15;
-	std::set<DWORD> ActiveKey;
-	std::set<DWORD> PressedKey;
+
+	struct {
+		std::set<DWORD> data;
+		std::mutex lock;
+	} ActiveKey;
 
 	struct {
 		std::thread thread;
 		std::chrono::milliseconds interval{ INTERVAL_MS };
 		bool stop = false;
 	} tSend;
+
+	struct {
+		std::thread thread;
+		bool stop = false;
+	} tsSend;
+
+	struct DelayKey {
+		DWORD vkCode;
+		bool is_add;
+	};
+
+	struct {
+		std::multimap< std::chrono::milliseconds, DelayKey> DellayKeys;
+		std::mutex lock;
+	}stDelayKey;
 };

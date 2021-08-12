@@ -12,6 +12,7 @@ std::shared_ptr <KeySender> sender;
 bool Macros(DWORD vkCode, DWORD time, bool is_down) {
 
 	static bool xbActive = false;
+	std::chrono::milliseconds interval{ 500 };
 
 	switch (vkCode)
 	{
@@ -37,7 +38,9 @@ bool Macros(DWORD vkCode, DWORD time, bool is_down) {
 			case VK_XBUTTON1:
 				sender->AddKeySpam('V', is_down);
 				return true;
-			
+			case VK_MBUTTON:
+				sender->AddKeySpam('F', is_down, interval);
+				return true;
 			//case VK_RBUTTON:
 			//	AddKeySpam(VK_RBUTTON, is_down );
 			//	break;

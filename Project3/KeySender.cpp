@@ -1,24 +1,54 @@
 #include "KeySender.h"
 
-KeySender::~KeySender()
-{
+KeySender::~KeySender(){
 	Stop();
 }
 
-void KeySender::AddKeySpam(DWORD vkCode, bool is_down) {
-	if (is_down) {
-		ActiveKey.insert(vkCode);
+void KeySender::AddKeySpam(DWORD vkCode, bool is_add) {
+	//std::lock_guard<std::mutex> lk(ActiveKey.lock);
+	if (is_add) {
+		ActiveKey.data.insert(vkCode);
 	}
 	else
-		ActiveKey.erase(vkCode);
+		ActiveKey.data.erase(vkCode);
+}
+
+void KeySender::AddKeySpam(DWORD vkCode, bool is_add, std::chrono::milliseconds tSleep) {
+	//std::lock_guard<std::mutex> lk(stDelayKey.lock);
+	stDelayKey.DellayKeys.insert({ tSleep, { vkCode, is_add } });
+}
+
+void KeySender::tAddKeySpam() {
+
+	while (!tsSend.stop) {
+
+		std::multimap< std::chrono::milliseconds, DelayKey>::iterator bDKey;
+		std::multimap< std::chrono::milliseconds, DelayKey>::const_iterator CIteratorKey;
+
+		if (stDelayKey.DellayKeys.empty()) {
+			continue;
+		}
+		bDKey = stDelayKey.DellayKeys.begin();
+		{
+			std::lock_guard<std::mutex> lk(stDelayKey.lock);
+
+			std::this_thread::sleep_for(bDKey->first);
+			AddKeySpam(bDKey->second.vkCode, bDKey->second.is_add);
+			//if(bDKey->second.is_add)
+			//	ActiveKey.data.insert(bDKey->second.vkCode);
+			//else
+			//	ActiveKey.data.erase(bDKey->second.vkCode);
+		}
+		//CIteratorKey = stDelayKey.DellayKeys.begin();
+		stDelayKey.DellayKeys.erase(bDKey);
+	};
 }
 
 void KeySender::RemoveKeySpam(DWORD vkCode) {
-	ActiveKey.erase(vkCode);
+	ActiveKey.data.erase(vkCode);
 }
 
-void KeySender::SendAllKeys(const std::set<DWORD>& vkCodes)
-{
+void KeySender::SendAllKeys(const std::set<DWORD>& vkCodes){
 	std::vector<KeyAction> keyActions;
 	for (const DWORD vkCode : vkCodes) {
 		keyActions.push_back({ vkCode, true });
@@ -29,20 +59,28 @@ void KeySender::SendAllKeys(const std::set<DWORD>& vkCodes)
 
 void KeySender::Loop() {
 	while (!tSend.stop) {
-		SendAllKeys(ActiveKey);
+		SendAllKeys(ActiveKey.data);
 		std::this_thread::sleep_for(tSend.interval);
 	}
 }
 
 void KeySender::Start() {
+	if (tSend.thread.joinable())
+		tSend.thread.join();
+	if (tsSend.thread.joinable())
+		tsSend.thread.join();
 	auto self = shared_from_this();
 	tSend.thread = std::thread(&KeySender::Loop, self);
+	tsSend.thread = std::thread(&KeySender::tAddKeySpam, self);
 }
 
 void KeySender::Stop() {
 	tSend.stop = true;
+	tsSend.stop = true;
 	if (tSend.thread.joinable())
 		tSend.thread.join();
+	if (tsSend.thread.joinable())
+		tsSend.thread.join();
 }
 
 void KeySender::KeyInput(const std::vector<KeyAction>& keyActions) {
